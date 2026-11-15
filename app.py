@@ -88,7 +88,7 @@ selected_signal = st.sidebar.selectbox(
     format_func=lambda x: rf_classes[x]
 )
 snr_slider = st.sidebar.slider("Channel Signal-to-Noise Ratio (SNR dB)", min_value=5, max_value=20, value=12)
-capture_btn = st.sidebar.button("⚡ Capture & Analyze Live RF Burst", use_container_width=True)
+st.sidebar.button("⚡ Capture & Analyze Live RF Burst", use_container_width=True)
 
 # Generate and analyze signal
 iq_sample = simulate_live_capture(selected_signal, snr_db=snr_slider)
@@ -98,14 +98,17 @@ with torch.no_grad():
     input_tensor = torch.tensor(iq_sample).unsqueeze(0)
     outputs = model(input_tensor)
     probs = torch.softmax(outputs, dim=1)
-    conf, pred_idx = torch.max(probs, 0)
+    conf, pred_idx = torch.max(probs, dim=1)
+
+pred_class = int(pred_idx.item())
+confidence_pct = float(conf.item()) * 100.0
 
 # Display Tactical Alert Banner
-if pred_idx.item() == 3:
-    st.error(f"### 🚨 ALERT: **{rf_classes[pred_idx.item()]} DETECTED!** (Confidence: **{conf.item()*100:.2f}%**)")
+if pred_class == 3:
+    st.error(f"### 🚨 ALERT: **{rf_classes[pred_class]} DETECTED!** (Confidence: **{confidence_pct:.2f}%**)")
     st.warning("⚠️ **Recommended Action:** Initiate Frequency-Hopping Spread Spectrum (FHSS) channel switch and alert Electronic Warfare Officer.")
 else:
-    st.success(f"### ✅ Verified Friendly Link: **{rf_classes[pred_idx.item()]}** (Confidence: **{conf.item()*100:.2f}%**)")
+    st.success(f"### ✅ Verified Friendly Link: **{rf_classes[pred_class]}** (Confidence: **{confidence_pct:.2f}%**)")
 
 # Plot Time-Domain I/Q Waveforms & Frequency Power Spectrum Side-by-Side
 col1, col2 = st.columns(2)
@@ -113,8 +116,8 @@ col1, col2 = st.columns(2)
 with col1:
     st.subheader("1. Time-Domain I/Q Waveform")
     fig1, ax1 = plt.subplots(figsize=(6, 3.5))
-    ax1.plot(iq_sample[:120], label="In-Phase (I)", color="navy")
-    ax1.plot(iq_sample[:120], label="Quadrature (Q)", color="darkorange", alpha=0.85)
+    ax1.plot(iq_sample[0][:120], label="In-Phase (I)", color="navy")
+    ax1.plot(iq_sample[1][:120], label="Quadrature (Q)", color="darkorange", alpha=0.85)
     ax1.set_xlabel("Time Samples")
     ax1.set_ylabel("Amplitude")
     ax1.legend(loc="upper right")
@@ -124,14 +127,13 @@ with col1:
 with col2:
     st.subheader("2. FFT Frequency Power Spectrum")
     fig2, ax2 = plt.subplots(figsize=(6, 3.5))
-    complex_sig = iq_sample + 1j * iq_sample
+    complex_sig = iq_sample[0] + 1j * iq_sample[1]
     fft_vals = np.fft.fftshift(np.fft.fft(complex_sig))
     power_db = 20 * np.log10(np.abs(fft_vals) + 1e-6)
     freqs = np.fft.fftshift(np.fft.fftfreq(len(complex_sig)))
-    ax2.plot(freqs, power_db, color="crimson" if pred_idx.item() == 3 else "teal", linewidth=1.5)
+    ax2.plot(freqs, power_db, color="crimson" if pred_class == 3 else "teal", linewidth=1.5)
     ax2.set_xlabel("Normalized Frequency Offset")
     ax2.set_ylabel("Power Spectral Density (dB)")
     ax2.set_ylim(-10, 65)
     ax2.grid(True, linestyle="--", alpha=0.5)
     st.pyplot(fig2)
-
